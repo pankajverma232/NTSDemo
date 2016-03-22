@@ -288,6 +288,7 @@
 				D972CA681C9C20AF001E77EA /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 
