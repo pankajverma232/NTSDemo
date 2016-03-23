@@ -12,7 +12,7 @@ import CoreData
 class detailViewVontroller: UIViewController {
     @IBOutlet weak var logo: UIImageView!
     @IBOutlet weak var titleLabel: UILabel!
-    @IBOutlet weak var detail: UITextField!
+    @IBOutlet weak var detail: UITextView!
     override func viewDidLoad() {
         let tapGesture = UITapGestureRecognizer(target: self, action: "tapAction")
         self.view.addGestureRecognizer(tapGesture)
@@ -36,7 +36,10 @@ class Media:NSManagedObject{
     @NSManaged var title: String?
     @NSManaged var detail: String?
     @NSManaged var imageUrl: String?
+    @NSManaged var serialNo: NSNumber?
 }
+
+
 
 //MARK: facade design
 class DataDownloadManager:NSObject {
@@ -45,6 +48,8 @@ class DataDownloadManager:NSObject {
         var fetchResults : [Media] = []
     
     func downloadDataForURL(url:String, callBack:  ([Media]?) -> Void){
+        self.fetchFromCoreData() //old data
+        
         let url = NSURL(string: url)
         let urlRequest = NSURLRequest(URL: url!)
         let session = NSURLSession.sharedSession()
@@ -53,113 +58,72 @@ class DataDownloadManager:NSObject {
                 do {
                     let responseDict  = try NSJSONSerialization.JSONObjectWithData(data!, options: .MutableContainers) as! NSDictionary
                     let results = responseDict["results"]! as! [NSDictionary]
-                    print(results)
+                
                     
+                    self.mapResponseData(results)           //create managedObjects(rows) from results and fill the scratch pad (table map)
+                    self.saveToCoreData()                   //save to core data
                     
-                    // delete old data from database
+                    self.fetchFromCoreData()  //fetch data from database
                     
-                    
-//                    do{
-//                        let delete = NSBatchDeleteRequest(fetchRequest:  NSFetchRequest(entityName: "PERSON"))
-//                        try  self.managedObjectContext.executeRequest(delete)
-//                    }catch{}
-//                    do{
-//                        try self.managedObjectContext.save()
-//                    } catch{}
-//                    
-                    
-                    // save to core data
-                    let entityDes = NSEntityDescription.entityForName("PERSON", inManagedObjectContext: self.managedObjectContext)
-                    for result in results{
-                        // Here managedObject represents a single row
-                        let managedObject = NSManagedObject.init(entity: entityDes!, insertIntoManagedObjectContext: self.managedObjectContext)
-                        managedObject.setValue(result["description"], forKey: "detail")
-                        managedObject.setValue(result["artistName"], forKey: "title")
-                        managedObject.setValue(result["screenshotUrls"]![0], forKey: "imageUrl")
-                    }
-                    do{
-                        try self.managedObjectContext.save()
-                    } catch{
-                    print("could not save ")
-                    }
-                   self.managedObjectContext.performBlockAndWait({ () -> Void in
-                    for media in self.fetchResults {
-                    self.managedObjectContext.deleteObject(media as NSManagedObject)
-                    }
-                   
-                    
-                           do{  try self.managedObjectContext.save()
-                           } catch{
-                            print("could not save ")
-                            }
-                    })
-                   
-                    //                    // delete old data from database
-                    //                    do{
-                    //                        try  self.managedObjectContext.executeRequest(delete)
-                    //                    }catch{}
-                    //                    do{
-                    //                        try self.managedObjectContext.save()
-                    //                    } catch{}
-                    //
-
-                    // fetch data from database
-                    do{
-                        self.fetchResults = try self.managedObjectContext.executeFetchRequest(NSFetchRequest(entityName: "PERSON")) as! [Media]
-                        callBack(self.fetchResults)
-
-                    }catch{}
-                } catch _ {}
+                    callBack(self.fetchResults)             //send data to caller
+                  
+                } catch _ {print("error in parsing JSON")}
             }
-            else{ // error: could not download from network
-                do{
-                    self.fetchResults = try self.managedObjectContext.executeFetchRequest(NSFetchRequest(entityName: "PERSON")) as! [Media]
-                    callBack(self.fetchResults)
-                }catch{}
+            else{ //error: could not download from network (offline support)
+                self.fetchFromCoreData()  //fetch data from database
+                callBack(self.fetchResults) //send data to caller
             }
 
         })
         task.resume()
     }
     
-//    
-//    func addObserverToObj(obj:DataDownloadManager){
-//        obj.addObserver(self, forKeyPath: "fetchResults", options: [.Old,.New], context: nil)
-//    }
-//    func removeObserverFromObj(obj:DataDownloadManager){
-//        obj.removeObserver(self, forKeyPath: "fetchResults", context: nil)
-//    }
-//    func getEmployeeList()->[PERSON]{
-//        let dm = DataDownloadManager()
-//        dm.downloadDataForURL("https://itunes.apple.com/search?term=apple&media=software", callBack: { data in
-//        print(data)
-//        })
-//        return dm.fetchResults
-//    }
-//    func showEmployees(){
-//        let e = getEmployeeList()
-//        if e.count > 0 {
-//            for i in e{
-//                print(i)
-//            }
-//        }
-//    }
-//    
-//    //MARK: observer
-//    override func observeValueForKeyPath(keyPath: String?, ofObject object: AnyObject?, change: [String : AnyObject]?, context: UnsafeMutablePointer<Void>) {
-//        guard keyPath != nil else {
-//            super.observeValueForKeyPath(keyPath, ofObject: object, change: change, context: context)
-//            return
-//        }
-//        
-//        switch (keyPath!) {
-//        case "fetchResults":  print("fetchResults changed!: \(change!["new"]!)")
-//      //  self.tableView.reloadData()
-//            
-//        default: print("still observing")
-//        super.observeValueForKeyPath(keyPath, ofObject: object, change: change, context: context)
-//        }
-//    }
+   
+   //MARK: coreData private methods 
+    private  func mapResponseData(results:[NSDictionary]){
+        let entityDes = NSEntityDescription.entityForName("PERSON", inManagedObjectContext: self.managedObjectContext)
+        var index:NSNumber = 0
+        for result in results{
+            // Here managedObject represents a single row
+            let managedObject = NSManagedObject.init(entity: entityDes!, insertIntoManagedObjectContext: self.managedObjectContext)
+            managedObject.setValue(result["description"], forKey: "detail")
+            managedObject.setValue(result["artistName"], forKey: "title")
+            managedObject.setValue(result["screenshotUrls"]![0], forKey: "imageUrl")
+            managedObject.setValue(index, forKey: "serialNo")
+            index = index.integerValue+1
+        }
+    }
+    
+    private   func saveToCoreData(){
+         self.managedObjectContext.performBlockAndWait({ () -> Void in  //  wait until process completes
+            do{
+                try self.managedObjectContext.save()
+            }catch{
+                print("error in saving coredata.")
+            }
+         })
+        // now delete the useless old data
+        self.deleteOldCoreData()
+    }
+    
+    private    func fetchFromCoreData(){
+        self.managedObjectContext.performBlockAndWait({ () -> Void in  //  wait until process completes
+            do{
+                self.fetchResults =  try self.managedObjectContext.executeFetchRequest(NSFetchRequest(entityName: "PERSON")) as! [Media]
+            }catch{
+                
+            }
+       })
+    }
+    
+    private   func deleteOldCoreData(){
+         self.managedObjectContext.performBlockAndWait({ () -> Void in  //  wait until process completes
+        for object in self.fetchResults {
+            self.managedObjectContext.deleteObject(object)
+        }
+             })
+    }
+    
     
 }
 
@@ -183,7 +147,7 @@ class ViewController: UIViewController ,UITableViewDataSource,UITableViewDelegat
             definesPresentationContext = true
             
             // refresh control
-            refreshControl.backgroundColor = UIColor.blueColor()
+            refreshControl.backgroundColor = UIColor.grayColor()
             refreshControl.tintColor = UIColor.whiteColor()
             refreshControl.addTarget(self, action: Selector("reloadTableData"), forControlEvents: UIControlEvents.ValueChanged)
             
@@ -192,6 +156,7 @@ class ViewController: UIViewController ,UITableViewDataSource,UITableViewDelegat
             
             downloadManager.downloadDataForURL(url) { (person) -> Void in
                self.fetchResults = person!
+                self.fetchResults.sortInPlace(self.ascending) //sort
                 dispatch_async(dispatch_get_main_queue(), { () -> Void in
                 self.tableView.reloadData()
                 })
@@ -208,6 +173,8 @@ class ViewController: UIViewController ,UITableViewDataSource,UITableViewDelegat
     func reloadTableData(){
         downloadManager.downloadDataForURL(url) { (person) -> Void in
             self.fetchResults = person!
+            self.fetchResults.sortInPlace(self.ascending) //sort
+           
             dispatch_async(dispatch_get_main_queue(), { () -> Void in
                 self.tableView.reloadData()
                 self.refreshControl.endRefreshing()
@@ -215,6 +182,10 @@ class ViewController: UIViewController ,UITableViewDataSource,UITableViewDelegat
         }
     }
     
+    func ascending(value1: Media, value2: Media) -> Bool {
+       return value1.serialNo?.integerValue < value2.serialNo?.integerValue;
+    }
+
 
     //MARK: tableView datasource
     func tableView(tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
@@ -236,7 +207,7 @@ class ViewController: UIViewController ,UITableViewDataSource,UITableViewDelegat
             result = fetchResults[indexPath.row]
         }
         cell.detail.text = result.detail
-        cell.titleLabel.text = result.title
+        cell.titleLabel.text = "\(result.serialNo!). " + result.title!
         
          var image = UIImage(named: "")
             if let str = result.imageUrl{

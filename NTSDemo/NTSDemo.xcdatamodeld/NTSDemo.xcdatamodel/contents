@@ -3,9 +3,10 @@
     <entity name="PERSON" representedClassName=".Media" syncable="YES">
         <attribute name="detail" optional="YES" attributeType="String" syncable="YES"/>
         <attribute name="imageUrl" optional="YES" attributeType="String" syncable="YES"/>
+        <attribute name="serialNo" attributeType="Integer 16" defaultValueString="0" indexed="YES" syncable="YES"/>
         <attribute name="title" optional="YES" attributeType="String" syncable="YES"/>
     </entity>
     <elements>
-        <element name="PERSON" positionX="-54" positionY="-9" width="128" height="90"/>
+        <element name="PERSON" positionX="-54" positionY="-9" width="128" height="105"/>
     </elements>
 </model>
